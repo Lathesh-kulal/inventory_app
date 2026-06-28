@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>{% block title %}Inventory Forecast{% endblock %}</title>
+
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Outfit:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+
+  <!-- Our custom CSS — the only stylesheet this app uses -->
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}" />
+
+  <!--
+    Chart.js CDN — loaded in <head> so it's available before dashboard.html's
+    inline <script> block runs at page bottom.
+  -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+</head>
+<body>
+
+  <!-- ── Page Content (each child template fills this block) ──────────── -->
+  <main class="page-content">
+
+    <!-- Flash messages (validation errors, warnings) -->
+    {% with messages = get_flashed_messages() %}
+      {% if messages %}
+        <div class="flash-container">
+          {% for msg in messages %}
+            <div class="flash-msg">⚠ {{ msg }}</div>
+          {% endfor %}
+        </div>
+      {% endif %}
+    {% endwith %}
+
+    <!-- Child template goes here -->
+    {% block content %}{% endblock %}
+
+  </main>
+
+  <!-- ── Footer ───────────────────────────────────────────────────────── -->
+  <footer class="footer">
+    <p>StockSense &mdash; Inventory Demand Forecasting &middot; Powered by Random Forest &amp; Flask</p>
+  </footer>
+
+  <!-- Per-page scripts block (dashboard chart lives here) -->
+  {% block scripts %}{% endblock %}
+
+</body>
+</html>

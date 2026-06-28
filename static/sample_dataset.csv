@@ -1,0 +1,4 @@
+Date,SKU,Category,Sales,Unit_Price,Cost_Price,Selling_Price,Discount_Pct,Is_Promotion,Is_Holiday,Current_Stock,Lead_Time_Days
+2024-01-01,NK-AIRMAX-BLK,Sneakers,272,12000,8000,12000,0,0,1,50,14
+2024-01-01,AD-ULTRABOOST,Running,195,15000,9000,15000,0,0,1,30,10
+2024-02-01,NK-AIRMAX-BLK,Sneakers,180,12000,8000,12000,0,0,0,45,14

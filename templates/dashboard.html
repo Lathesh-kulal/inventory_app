@@ -1,0 +1,585 @@
+{% extends "base.html" %}
+{% block title %}Forecast Dashboard — StockSense{% endblock %}
+
+{% block content %}
+
+<div class="dash-header">
+  <div>
+    <p class="dash-label">Random Forest · 3-Month Forecast Horizon</p>
+    <h2 class="dash-title">Demand Forecast Dashboard</h2>
+  </div>
+  <a href="/" class="btn-outline">← Upload New File</a>
+</div>
+
+{% if is_multi %}
+
+<!-- ── Portfolio KPI Strip ───────────────────────────────────────────────── -->
+<div class="kpi-strip kpi-5">
+  <div class="kpi-card">
+    <span class="kpi-label">Total SKUs Tracked</span>
+    <span class="kpi-value accent">{{ sku_list | length }}</span>
+    <span class="kpi-unit">products with trained models</span>
+  </div>
+  <div class="kpi-card">
+    <span class="kpi-label">🏆 Top Selling SKU</span>
+    <span class="kpi-value sku-tag">{{ top_sku }}</span>
+    <span class="kpi-unit">{{ sku_results[top_sku].avg_sales }} units / month avg</span>
+  </div>
+  {% if total_rev_fmt %}
+  <div class="kpi-card">
+    <span class="kpi-label">Total Revenue (All SKUs)</span>
+    <span class="kpi-value accent">{{ total_rev_fmt }}</span>
+    <span class="kpi-unit">historical period</span>
+  </div>
+  <div class="kpi-card">
+    <span class="kpi-label">Next Month Rev. Forecast</span>
+    <span class="kpi-value ok">{{ total_forecast_fmt }}</span>
+    <span class="kpi-unit">all SKUs combined · month 1 of 3</span>
+  </div>
+  {% endif %}
+  <div class="kpi-card">
+    <span class="kpi-label">⚠ Active Stock Alerts</span>
+    <span class="kpi-value {% if alerts %}danger{% else %}ok{% endif %}">{{ alerts | length }}</span>
+    {% if total_lost_fmt %}
+    <span class="kpi-unit">Est. lost rev: <strong>{{ total_lost_fmt }}</strong></span>
+    {% else %}
+    <span class="kpi-unit">SKUs needing attention</span>
+    {% endif %}
+  </div>
+</div>
+
+<!-- ── Tab Navigation ───────────────────────────────────────────────────── -->
+<div class="dash-tabs">
+  <button class="dash-tab active" onclick="switchTab('alerts')">🚨 Stock Alerts {% if alerts %}<span
+      class="tab-badge">{{ alerts | length }}</span>{% endif %}</button>
+  <button class="dash-tab" onclick="switchTab('forecast')">📈 Forecasting</button>
+  <button class="dash-tab" onclick="switchTab('charts')">📊 Charts</button>
+</div>
+
+<!-- ── Stock Alert Cards ─────────────────────────────────────────────────── -->
+<div id="tab-alerts" class="tab-panel">
+  {% if alerts %}
+  <div class="alerts-section">
+    <div class="alerts-header">
+      <h3 class="alerts-title">Stock Alerts <span class="alerts-count">{{ alerts | length }}</span></h3>
+      <p class="alerts-sub">Sorted by urgency · Based on current stock, lead time, forecast &amp; price</p>
+    </div>
+    <div class="table-wrap">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>RANK</th>
+            <th>SKU</th>
+            <th>CATEGORY</th>
+            <th>IN STOCK</th>
+            <th>REORDER PT</th>
+            <th>DAYS LEFT</th>
+            <th>ORDER QTY</th>
+            <th>MESSAGE</th>
+            <th>STATUS</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for r in alerts %}
+          {% set s = r.stock %}
+          <tr>
+            <td class="row-num">{{ loop.index }}</td>
+            <td class="ac-sku">{{ r.sku }}</td>
+            <td><span class="cat-tag">{{ r.get('category','—') }}</span></td>
+            <td>{{ s.current_stock }}</td>
+            <td>{{ s.reorder_point }}</td>
+            <td>{{ s.days_of_stock }}</td>
+            <td>{{ s.reorder_qty }}</td>
+            <td class="ac-msg">{{ s.status_msg }}</td>
+            <td><span class="status-badge status-{{ s.status | lower }}">{{ s.status }}</span></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% else %}
+  <div class="alert alert-ok"><span class="alert-icon">✔</span>
+    <div><strong>All Stock Levels Healthy</strong> — No action required.</div>
+  </div>
+  {% endif %}
+</div><!-- end tab-alerts -->
+
+<!-- ── Charts Tab ────────────────────────────────────────────────────────── -->
+<div id="tab-charts" class="tab-panel hidden">
+  <div class="charts-row">
+    <div class="card chart-card-main">
+      <div class="card-head">
+        <h3>Product Demand Comparison</h3>
+        <div class="chart-toggle">
+          <button class="toggle-btn active" onclick="switchChart('units')">Units</button>
+          <button class="toggle-btn" onclick="switchChart('revenue')">Revenue</button>
+        </div>
+      </div>
+      <div class="chart-wrap"><canvas id="skuCompareChart"></canvas></div>
+    </div>
+    <div class="card chart-card-side">
+      <div class="card-head">
+        <h3 id="donut-title">Sales by Category</h3>
+        <div class="chart-toggle">
+          <button class="toggle-btn active" onclick="switchDonut('units')">Units</button>
+          <button class="toggle-btn" onclick="switchDonut('revenue')">Revenue</button>
+        </div>
+      </div>
+      <div class="chart-wrap chart-wrap-sm"><canvas id="categoryChart"></canvas></div>
+    </div>
+  </div>
+
+  <!-- ── Promotion Impact Chart ────────────────────────────────────────────── -->
+  <div class="card">
+    <div class="card-head">
+      <h3>Promotion Lift Analysis</h3>
+      <span class="legend-note">Avg sales during promo months vs normal months</span>
+    </div>
+    <div class="chart-wrap"><canvas id="promoChart"></canvas></div>
+  </div>
+
+  <!-- ── Full Product Table ─────────────────────────────────────────────────── -->
+  <div class="card">
+    <div class="card-head">
+      <h3>All Products — Full Summary</h3>
+      <span class="record-count">{{ sku_list | length }} SKUs</span>
+      <button id="btn-download-excel" class="btn-outline" onclick="downloadExcel()">⬇ Download Excel</button>
+    </div>
+    <div class="table-wrap">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Rank</th>
+            <th>SKU</th>
+            <th>Category</th>
+            <th>Avg Sales/Mo</th>
+            <th>Unit Price</th>
+            <th>Margin %</th>
+            <th>Forecast</th>
+            <th>Rev Forecast</th>
+            <th>In Stock</th>
+            <th>Days Left</th>
+            <th>Order Qty</th>
+            <th>Promo Lift</th>
+            <th>Accuracy</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for sku in sku_list %}
+          {% set r = sku_results[sku] %}
+          {% set s = r.stock %}
+          {% set rv = r.revenue %}
+          {% set pa = r.promo_analysis %}
+          <tr>
+            <td class="row-num">{{ loop.index }}</td>
+            <td><strong>{{ sku }}</strong></td>
+            <td><span class="cat-tag">{{ r.get('category','—') }}</span></td>
+            <td class="num">{{ r.avg_sales }}</td>
+            <td class="num">{{ rv.unit_price_fmt if rv else '—' }}</td>
+            <td class="num">{{ rv.margin_pct if rv else '—' }}{% if rv %}%{% endif %}</td>
+            <td class="num pred-cell">
+              <strong>{{ r.future_pred }}</strong> <small>{{ r.future_label }}</small>
+              <div style="font-size:11px;color:#94a3b8;margin-top:2px;white-space:nowrap;">
+                {% for m in r.future_forecast %}{{ m.pred }}{% if not loop.last %} → {% endif %}{% endfor %}
+              </div>
+            </td>
+            <td class="num accent-text">{{ rv.future_rev_fmt if rv else '—' }}</td>
+            <td class="num">{{ s.current_stock if s.current_stock is not none else '—' }}</td>
+            <td class="num {% if s.days_of_stock is not none and s.days_of_stock < 20 %}err-high{% endif %}">
+              {{ s.days_of_stock if s.days_of_stock is not none else '—' }}
+            </td>
+            <td class="num">{% if s.reorder_qty and s.reorder_qty > 0 %}<strong>{{ s.reorder_qty }}</strong>{% else
+              %}—{% endif %}</td>
+            <td class="num {% if pa and pa.lift_pct > 20 %}ok-text{% endif %}">
+              {{ '+' + pa.lift_pct|string + '%' if pa else '—' }}
+            </td>
+            <td class="num">
+              <span
+                class="acc-badge {% if r.accuracy >= 90 %}acc-good{% elif r.accuracy >= 75 %}acc-ok{% else %}acc-bad{% endif %}">{{
+                r.accuracy }}%</span>
+            </td>
+            <td><span class="status-badge status-{{ s.status | lower }}">{{ s.status }}</span></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+</div><!-- end tab-charts -->
+
+<!-- ── Forecast Tab ──────────────────────────────────────────────────────── -->
+<div id="tab-forecast" class="tab-panel hidden">
+
+  <!-- ── Per-SKU Deep Dive ──────────────────────────────────────────────────── -->
+  <div class="card">
+    <div class="card-head">
+      <h3>Product Deep-Dive</h3>
+      <p class="card-sub">Click any SKU to see its individual forecast, revenue &amp; promo metrics</p>
+    </div>
+    <div class="sku-btn-row">
+      {% for sku in sku_list %}
+      <button class="sku-btn" data-sku="{{ sku }}" onclick="showSKU('{{ sku }}')">{{ sku }}</button>
+      {% endfor %}
+    </div>
+    <div id="sku-detail" class="sku-detail hidden">
+      <div class="sku-detail-header">
+        <div>
+          <span id="detail-sku-name" class="detail-sku-name"></span>
+          <span id="detail-category" class="cat-tag"></span>
+        </div>
+        <div class="detail-metrics">
+          <span class="dm-item"><span class="dm-label">Forecast</span><span id="dm-pred"
+              class="dm-val accent"></span></span>
+          <span class="dm-item"><span class="dm-label">Rev Forecast</span><span id="dm-rev"
+              class="dm-val ok"></span></span>
+          <span class="dm-item"><span class="dm-label">In Stock</span><span id="dm-stock" class="dm-val"></span></span>
+          <span class="dm-item"><span class="dm-label">Days Left</span><span id="dm-days"
+              class="dm-val warn"></span></span>
+          <span class="dm-item"><span class="dm-label">Order Qty</span><span id="dm-order"
+              class="dm-val danger"></span></span>
+          <span class="dm-item"><span class="dm-label">Promo Lift</span><span id="dm-promo"
+              class="dm-val accent"></span></span>
+          <span class="dm-item"><span class="dm-label">Accuracy</span><span id="dm-acc" class="dm-val ok"></span></span>
+        </div>
+      </div>
+
+      <!-- ── Forecast Month Picker ─────────────────────────────────────────── -->
+      <div class="fh-picker">
+        <span class="fh-picker-label">View Forecast For:</span>
+        <div class="fh-btn-row">
+          <button class="fh-btn active" data-month="1" onclick="selectForecastMonth(1)">Month 1</button>
+          <button class="fh-btn" data-month="2" onclick="selectForecastMonth(2)">Month 2</button>
+          <button class="fh-btn" data-month="3" onclick="selectForecastMonth(3)">Month 3</button>
+        </div>
+      </div>
+
+      <div class="chart-wrap"><canvas id="skuDetailChart"></canvas></div>
+    </div>
+  </div>
+
+</div><!-- end tab-forecast -->
+
+{% endif %}
+{% endblock %}
+{% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script>
+  function switchTab(name) {
+    document.querySelectorAll('.tab-panel').forEach(p => p.classList.add('hidden'));
+    document.querySelectorAll('.dash-tab').forEach(b => b.classList.remove('active'));
+    document.getElementById('tab-' + name).classList.remove('hidden');
+    event.target.classList.add('active');
+  }
+
+  const SKU_RESULTS = JSON.parse(`{{ sku_results_json | safe }}`);
+  const CATEGORIES = JSON.parse(`{{ categories_json | safe }}`);
+  const CAT_REVENUE = JSON.parse(`{{ cat_revenue_json | safe }}`);
+  const IS_MULTI = JSON.parse('{{ is_multi | tojson }}');
+
+  const PALETTE = ['#0d9488', '#f59e0b', '#6366f1', '#ec4899', '#22c55e',
+    '#3b82f6', '#f97316', '#8b5cf6', '#14b8a6', '#ef4444',
+    '#84cc16', '#06b6d4', '#a855f7', '#f43f5e'];
+  const GRID = 'rgba(148,163,184,0.12)', TICK = '#64748b';
+  const TT = { backgroundColor: '#1e293b', titleColor: '#94a3b8', bodyColor: '#f1f5f9', padding: 12 };
+
+
+  if (IS_MULTI) {
+
+    const skuNames = Object.keys(SKU_RESULTS);
+
+    // ── Chart A — SKU Comparison (units OR revenue, toggleable) ─────────────
+    let compareChart = null;
+
+    function buildCompareChart(mode) {
+      if (compareChart) compareChart.destroy();
+      const data = mode === 'units'
+        ? skuNames.map(s => SKU_RESULTS[s].avg_sales)
+        : skuNames.map(s => SKU_RESULTS[s].revenue ? SKU_RESULTS[s].revenue.avg_monthly_rev : 0);
+      const label = mode === 'units' ? 'Avg Monthly Sales (units)' : 'Avg Monthly Revenue (₹)';
+
+      compareChart = new Chart(document.getElementById('skuCompareChart').getContext('2d'), {
+        type: 'bar',
+        data: {
+          labels: skuNames,
+          datasets: [
+            { label, data, backgroundColor: PALETTE, borderRadius: 5 },
+            {
+              label: mode === 'units' ? 'Next Month Forecast' : 'Next Month Rev Forecast',
+              data: mode === 'units'
+                ? skuNames.map(s => SKU_RESULTS[s].future_pred)
+                : skuNames.map(s => SKU_RESULTS[s].revenue ? SKU_RESULTS[s].revenue.future_revenue : 0),
+              backgroundColor: 'transparent', borderColor: PALETTE,
+              borderWidth: 2, borderDash: [4, 3], type: 'bar', borderRadius: 5,
+            },
+          ],
+        },
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          plugins: { legend: { position: 'top', labels: { color: TICK, font: { size: 11 } }, onClick: null }, tooltip: { ...TT } },
+          scales: {
+            x: { grid: { color: GRID }, ticks: { color: TICK, font: { size: 10 }, maxRotation: 40 } },
+            y: {
+              grid: { color: GRID }, ticks: { color: TICK, callback: v => mode === 'units' ? v : '₹' + v.toLocaleString('en-IN') },
+              title: { display: true, text: label, color: '#94a3b8' }
+            },
+          },
+        },
+      });
+    }
+
+    window.switchChart = function (mode) {
+      document.querySelectorAll('.chart-toggle .toggle-btn').forEach(b => b.classList.remove('active'));
+      event.target.classList.add('active');
+      buildCompareChart(mode);
+    };
+    buildCompareChart('units');
+
+    // ── Chart B — Category Donut (units OR revenue, toggleable) ─────────────
+    let donutChart = null;
+
+    function buildDonut(mode) {
+      if (donutChart) donutChart.destroy();
+      const data = mode === 'units' ? Object.values(CATEGORIES) : Object.values(CAT_REVENUE);
+      const labels = mode === 'units' ? Object.keys(CATEGORIES) : Object.keys(CAT_REVENUE);
+      document.getElementById('donut-title').textContent =
+        mode === 'units' ? 'Sales by Category' : 'Revenue by Category';
+
+      donutChart = new Chart(document.getElementById('categoryChart').getContext('2d'), {
+        type: 'doughnut',
+        data: { labels, datasets: [{ data, backgroundColor: PALETTE, borderWidth: 2, borderColor: '#fff' }] },
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          plugins: {
+            legend: { position: 'bottom', labels: { color: TICK, font: { size: 11 }, boxWidth: 12 } },
+            tooltip: {
+              ...TT, callbacks: {
+                label: c => {
+                  const val = mode === 'units'
+                    ? `${c.parsed.toLocaleString()} units`
+                    : `₹${c.parsed.toLocaleString('en-IN')}`;
+                  return ` ${c.label}: ${val}`;
+                }
+              }
+            },
+          },
+        },
+      });
+    }
+
+    window.switchDonut = function (mode) {
+      const btns = document.querySelectorAll('.card:nth-of-type(2) .toggle-btn');
+      btns.forEach(b => b.classList.remove('active'));
+      event.target.classList.add('active');
+      buildDonut(mode);
+    };
+    buildDonut('units');
+
+    // ── Chart C — Promotion Lift Grouped Bar ─────────────────────────────────
+    // Shows avg sales during promo vs non-promo for each SKU that has promos
+    const promoSkus = skuNames.filter(s => SKU_RESULTS[s].promo_analysis);
+    if (promoSkus.length > 0) {
+      new Chart(document.getElementById('promoChart').getContext('2d'), {
+        type: 'bar',
+        data: {
+          labels: promoSkus,
+          datasets: [
+            {
+              label: 'No Promotion', borderRadius: 4,
+              data: promoSkus.map(s => SKU_RESULTS[s].promo_analysis.no_promo_avg),
+              backgroundColor: 'rgba(100,116,139,0.6)',
+            },
+            {
+              label: 'With Promotion', borderRadius: 4,
+              data: promoSkus.map(s => SKU_RESULTS[s].promo_analysis.promo_avg),
+              backgroundColor: PALETTE,
+            },
+          ],
+        },
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          plugins: {
+            legend: { position: 'top', labels: { color: TICK }, onClick: null },
+            tooltip: {
+              ...TT, callbacks: {
+                afterBody: ctx => {
+                  const sku = promoSkus[ctx[0].dataIndex];
+                  const lift = SKU_RESULTS[sku].promo_analysis.lift_pct;
+                  return [`Promotion lift: +${lift}%`];
+                },
+              }
+            },
+          },
+          scales: {
+            x: { grid: { color: GRID }, ticks: { color: TICK, font: { size: 10 }, maxRotation: 40 } },
+            y: { grid: { color: GRID }, ticks: { color: TICK }, title: { display: true, text: 'Avg Units Sold', color: '#94a3b8' } },
+          },
+        },
+      });
+    }
+
+    // ── Chart D — SKU drill-down ─────────────────────────────────────────────
+    let detailChart = null;
+    let currentSkuResult = null;   // holds the active SKU's result object
+    let currentDatesLen = 0;       // number of historical date points (for padding)
+    let selectedMonth = 1;         // which forecast month (1, 2 or 3) is currently shown
+
+    // Update the "Forecast" / "Rev Forecast" text fields for the chosen month
+    function updateForecastDisplay(month) {
+      const r = currentSkuResult;
+      if (!r) return;
+      const m = r.future_forecast[month - 1];
+      document.getElementById('dm-pred').textContent = m.pred + ' units · ' + m.label;
+      document.getElementById('dm-rev').textContent = m.revenue_fmt || '—';
+    }
+
+    // Update the chart so only the selected month's forecast point is shown
+    function highlightForecastMonth(month) {
+      if (!detailChart || !currentSkuResult) return;
+      const futurePreds = currentSkuResult.future_forecast.map(m => m.pred);
+      const forecastDot = futurePreds.map((p, i) => (i === month - 1 ? p : null));
+      detailChart.data.datasets[2].data = [...new Array(currentDatesLen).fill(null), ...forecastDot];
+
+      const filteredFuturePreds = futurePreds.map((p, i) => (i < month ? p : null));
+      detailChart.data.datasets[1].data = [...currentSkuResult.predictions, ...filteredFuturePreds];
+
+      detailChart.update();
+    }
+
+    // Called when a Month 1 / Month 2 / Month 3 button is pressed
+    window.selectForecastMonth = function (month) {
+      selectedMonth = month;
+      document.querySelectorAll('.fh-btn').forEach(b => b.classList.remove('active'));
+      document.querySelector(`.fh-btn[data-month="${month}"]`).classList.add('active');
+      updateForecastDisplay(month);
+      highlightForecastMonth(month);
+    };
+
+    window.showSKU = function (sku) {
+      const r = SKU_RESULTS[sku];
+      const s = r.stock || {};
+      const pa = r.promo_analysis || {};
+      if (!r) return;
+
+      currentSkuResult = r;
+      currentDatesLen = r.dates.length;
+      selectedMonth = 1;
+
+      document.getElementById('sku-detail').classList.remove('hidden');
+      document.getElementById('detail-sku-name').textContent = sku;
+      document.getElementById('detail-category').textContent = r.category || '';
+      document.getElementById('dm-stock').textContent = s.current_stock != null ? s.current_stock + ' units' : '—';
+      document.getElementById('dm-days').textContent = s.days_of_stock != null ? s.days_of_stock + ' days' : '—';
+      document.getElementById('dm-order').textContent = s.reorder_qty != null ? s.reorder_qty + ' units' : '—';
+      document.getElementById('dm-promo').textContent = pa.lift_pct != null ? '+' + pa.lift_pct + '%' : 'No promos';
+      document.getElementById('dm-acc').textContent = r.accuracy + '%';
+
+      // Reset month picker to Month 1 for the newly selected SKU
+      document.querySelectorAll('.fh-btn').forEach(b => b.classList.remove('active'));
+      document.querySelector('.fh-btn[data-month="1"]').classList.add('active');
+      updateForecastDisplay(1);
+
+      document.querySelectorAll('.sku-btn').forEach(b => b.classList.remove('active'));
+      document.querySelector(`.sku-btn[data-sku="${sku}"]`).classList.add('active');
+      document.getElementById('sku-detail').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+
+      if (detailChart) detailChart.destroy();
+
+      const futureLabels = r.future_forecast.map(m => m.date + '-01');
+      const futurePreds = r.future_forecast.map(m => m.pred);
+
+      const allLabels = [...r.dates, ...futureLabels];
+      const actualData = [...r.actuals, ...futureLabels.map(() => null)];
+      const filteredFuturePreds = futurePreds.map((p, i) => (i < selectedMonth ? p : null));
+      const predData = [...r.predictions, ...filteredFuturePreds];
+      // Only show the forecast star for the currently selected month (Month 1 by default)
+      const forecastDot = [
+        ...new Array(r.dates.length).fill(null),
+        ...futurePreds.map((p, i) => (i === selectedMonth - 1 ? p : null)),
+      ];
+
+      detailChart = new Chart(document.getElementById('skuDetailChart').getContext('2d'), {
+        type: 'line',
+        data: {
+          labels: allLabels,
+          datasets: [
+            { label: 'Actual Sales', data: actualData, borderColor: '#0d9488', backgroundColor: 'rgba(13,148,136,0.08)', borderWidth: 2.5, pointRadius: 4, tension: 0.35, fill: true, spanGaps: false },
+            { label: 'RF Prediction', data: predData, borderColor: '#f59e0b', backgroundColor: 'transparent', borderWidth: 2, borderDash: [6, 4], pointRadius: 3, tension: 0.35, fill: false, spanGaps: true },
+            { label: 'Forecast', data: forecastDot, borderColor: '#ef4444', backgroundColor: '#ef4444', borderWidth: 0, pointRadius: 8, pointStyle: 'star', fill: false },
+          ],
+        },
+        options: {
+          animation: false,
+          responsive: true, maintainAspectRatio: false,
+          interaction: { mode: 'index', intersect: false },
+          plugins: { legend: { display: false }, tooltip: { ...TT, callbacks: { label: c => c.parsed.y != null ? ` ${c.dataset.label}: ${c.parsed.y} units` : null } } },
+          scales: {
+            x: { grid: { color: GRID }, ticks: { color: TICK, maxRotation: 45, font: { size: 11 } } },
+            y: { grid: { color: GRID }, ticks: { color: TICK }, title: { display: true, text: 'Units Sold', color: '#94a3b8' } },
+          },
+        },
+      });
+    };
+
+    const firstBtn = document.querySelector('.sku-btn');
+    if (firstBtn) showSKU(firstBtn.dataset.sku);
+  }
+
+  // ── Excel Download ───────────────────────────────────────────────────────────
+  window.downloadExcel = function () {
+    const skuNames = Object.keys(SKU_RESULTS);
+
+    const headers = [
+      'Rank', 'SKU', 'Category', 'Avg Sales/Mo', 'Unit Price',
+      'Margin %', 'Forecast M1', 'Forecast M2', 'Forecast M3',
+      'Rev Forecast (M1)', 'In Stock', 'Days Left', 'Order Qty',
+      'Promo Lift %', 'Accuracy %', 'Status'
+    ];
+
+    const rows = skuNames.map((sku, idx) => {
+      const r = SKU_RESULTS[sku];
+      const s = r.stock || {};
+      const rv = r.revenue || null;
+      const pa = r.promo_analysis || null;
+      const ff = r.future_forecast || [];
+
+      return [
+        idx + 1,
+        sku,
+        r.category || '—',
+        r.avg_sales,
+        rv ? rv.unit_price : '—',
+        rv ? rv.margin_pct : '—',
+        ff[0] ? ff[0].pred : '—',
+        ff[1] ? ff[1].pred : '—',
+        ff[2] ? ff[2].pred : '—',
+        rv ? rv.future_revenue : '—',
+        s.current_stock != null ? s.current_stock : '—',
+        s.days_of_stock != null ? s.days_of_stock : '—',
+        (s.reorder_qty && s.reorder_qty > 0) ? s.reorder_qty : '—',
+        pa ? pa.lift_pct : '—',
+        r.accuracy,
+        s.status || '—'
+      ];
+    });
+
+    const wsData = [headers, ...rows];
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.aoa_to_sheet(wsData);
+
+    // Column widths
+    ws['!cols'] = [
+      { wch: 6 }, { wch: 16 }, { wch: 14 }, { wch: 14 }, { wch: 12 }, { wch: 10 },
+      { wch: 13 }, { wch: 13 }, { wch: 13 }, { wch: 18 }, { wch: 10 }, { wch: 10 },
+      { wch: 10 }, { wch: 12 }, { wch: 12 }, { wch: 10 }
+    ];
+
+    XLSX.utils.book_append_sheet(wb, ws, 'All Products Summary');
+
+    const today = new Date().toISOString().slice(0, 10);
+    XLSX.writeFile(wb, `StockSense_All_Products_${today}.xlsx`);
+  };
+</script>
+{% endblock %}
