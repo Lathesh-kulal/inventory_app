@@ -8,7 +8,12 @@
     <p class="dash-label">Random Forest · 3-Month Forecast Horizon</p>
     <h2 class="dash-title">Demand Forecast Dashboard</h2>
   </div>
-  <a href="/" class="btn-outline">← Upload New File</a>
+  <div style="display:flex; gap:8px; align-items:center;">
+    {% if show_report_download %}
+    <a href="/download-cleaned" class="btn-outline" id="btn-download-report">⬇ Download Cleaned Data</a>
+    {% endif %}
+    <a href="/" class="btn-outline">← Upload New File</a>
+  </div>
 </div>
 
 {% if is_multi %}

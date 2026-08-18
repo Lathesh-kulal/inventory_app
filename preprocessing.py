@@ -1,30 +1,7 @@
-"""
-preprocessing.py — Simple Data Cleaning Module
-================================================
-Handles missing values in the uploaded CSV before it goes to the model.
-
-Kept intentionally simple (no advanced imputation, no ML-based filling):
-  • Numeric columns   -> fill missing with the column MEDIAN
-  • Text/categorical   -> fill missing with the column MODE (most frequent value)
-  • Date column        -> drop rows where Date itself is missing (can't fix a missing date)
-  • Fully empty cols   -> dropped (median/mode would be meaningless)
-
-Usage:
-    from preprocessing import clean_data
-    df, report = clean_data(df)
-"""
-
 import pandas as pd
 
 
 def clean_data(df: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
-    """Clean missing values in the dataframe using simple rules.
-
-    Returns
-    -------
-    df      : cleaned DataFrame
-    report  : dict summary of what was done (useful for logging / flash messages)
-    """
     df = df.copy()
     report = {
         "rows_before": len(df),

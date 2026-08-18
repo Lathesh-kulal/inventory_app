@@ -976,3 +976,21 @@ code {
 
 /* Disable all animations and transitions
 * { transition: none !important; animation: none !important; } */
+
+/* ── Flash Messages ───────────────────────────────────────── */
+.flash-container {
+  max-width: 960px;
+  margin: 12px auto 0;
+  padding: 0 20px;
+}
+.flash-msg {
+  background: var(--warn-bg);
+  color: var(--warn-text);
+  border: 1px solid #fcd34d;
+  border-left: 4px solid var(--warn);
+  border-radius: 8px;
+  padding: 12px 16px;
+  font-size: 0.875rem;
+  font-weight: 500;
+  margin-bottom: 8px;
+}

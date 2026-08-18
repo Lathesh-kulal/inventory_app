@@ -1,28 +1,3 @@
-"""
-model.py — StockSense Forecasting Engine
-=========================================
-All ML / forecasting logic lives here, separate from the Flask app (app.py).
-
-What's in this file:
-  • fmt_currency                — ₹ formatting helper
-  • calculate_stock_health      — reorder point / safety stock / alerts
-  • forecast_one_product        — trains a RandomForest per product and
-                                   produces a recursive multi-step forecast
-  • run_multi_product_forecast  — orchestrates forecast_one_product across SKUs
-
-Forecast horizon
------------------
-The model now predicts FORECAST_HORIZON (3) months ahead instead of just 1.
-This is done with a recursive ("walk-forward") strategy:
-  1. Train the RandomForest once on all historical rows (as before).
-  2. To predict month 1, use the real last-known Sales_Lag1 / Rolling_3.
-  3. To predict month 2, treat month 1's *prediction* as if it were the
-     actual sale, recompute Sales_Lag1 / Rolling_3 from that, and predict again.
-  4. Repeat for month 3.
-This is the standard way to extend a lag/rolling-feature model beyond a
-single step without retraining a separate model per horizon.
-"""
-
 from collections import deque
 import numpy as np
 import pandas as pd
